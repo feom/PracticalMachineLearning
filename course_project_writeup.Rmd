@@ -1,0 +1,141 @@
+---
+title: "Practical Machine Learning - Course Project Writeup"
+output: html_document
+---
+
+## Executive Summary
+The goal of this course project is to predict how well an activity was performed using the data from accelerometers on the belt, forearm, arm, and dumbell of the six participants; that means the goal is to predict the value of the `classe` variable. A classification tree model and a random forests model where used. The random forest model delivered the better as well as high accuracy of 0.9949 and was therefore used for prediciting activities on the test data set for submission.
+
+## Data Loading & Preprocessing
+First of all we need to load the training and testing datasets from the csv-files. The assumption is that the files reside in the current working directory. We treat division by zero errors as "NA".
+
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+library(randomForest)
+library(rattle)
+library(rpart)
+set.seed(32343)
+
+rawTrainingData <- read.csv("pml-training.csv", header=T, na.strings=c("NA", "#DIV/0!"));
+rawFinalTestingData <-read.csv("pml-testing.csv", header=T, na.string=c("NA", "#DIV/0!"));
+```
+
+We reduce the number of 160 variables to the relevant ones for the problem. We remove user, timestamp and window related variables (cols 1 - 7).
+```{r}
+trainingData <- rawTrainingData[, -c(1:7)]
+finalTestingData <- rawFinalTestingData[, -c(1:7)] 
+```
+
+Next we eliminate all variables that contain `NA` values.
+```{r}
+trainingHasNa <- apply(trainingData, 2, function(x) { any(is.na(x)) } )
+trainingData <- trainingData[, !trainingHasNa]
+
+testingHasNa <- apply(finalTestingData, 2, function(x) { any(is.na(x)) } )
+finalTestingData <- finalTestingData[, !testingHasNa]
+```
+
+## Data Partition
+Partition the training data set into independent training and testing data sets using 75 % for the training data set and 25 % for the testing data partition used for cross-validation.
+
+```{r}
+partTrain <- createDataPartition(y = trainingData$classe, p=0.75, list = FALSE)
+
+trainingDataPartition <- trainingData[partTrain, ] 
+testingDataPartition <- trainingData[-partTrain, ] 
+
+```
+
+## Classification Tree Model
+
+### Training
+Traing the model on the training data using a classification tree model.
+
+```{r, cache=TRUE}
+
+rpFit <- train(classe ~ ., method = "rpart" , data = trainingDataPartition)
+```
+Plot the model using rattle fancy plot.
+```{r}
+fancyRpartPlot(rpFit$finalModel)
+```
+
+### Prediction
+Predict using the test data partition for cross validation.
+```{r}
+rpPred <- predict(rpFit, newdata = testingDataPartition)
+```
+
+### Cross Validation
+The model yields the following confusion matrix.
+```{r}
+rpPredConfMatrix <- confusionMatrix(rpPred, testingDataPartition$classe)
+rpPredConfMatrix
+```
+As observed by the low accuracy the model does not deliver an accurate prediction.
+The expected out of sample error is:
+```{r}
+rpAccuracy <- rpPredConfMatrix$overall[[1]]
+rpExpectedError <- 1 - rpAccuracy
+rpExpectedError
+```
+
+## Random Forests Model
+
+### Training
+Traing the model on the training data using a random forests using cv method with 4 folds.
+
+```{r, cache=TRUE}
+fitControl <- trainControl(method = "cv", number = 4, verboseIter = FALSE)
+rfFit <- train(classe ~., method = "rf", data = trainingDataPartition, trControl = fitControl)
+```
+Output the final model.
+```{r}
+rfFit$finalModel
+```
+
+### Prediction
+Predict using the test data partition for cross validation.
+```{r}
+rfPred <- predict(rfFit, newdata = testingDataPartition)
+```
+
+### Cross Validation
+The model yields the following confusion matrix.
+```{r}
+rfPredConfMatrix <- confusionMatrix(rfPred, testingDataPartition$classe)
+rfPredConfMatrix
+```
+The model yields a pretty high accuracy of 0.9949.
+The expected out of sample error is:
+```{r}
+rfAccuracy <- rfPredConfMatrix$overall[[1]]
+rfExpectedError <- 1 - rfAccuracy
+rfExpectedError
+```
+
+## Conclusion & Submission
+The random forests model yields better performance sinc the expected error is lower in comparison to the classification tree model. The random forest model was used to predict activity quality for the final submission applied to the final testing data set.
+
+```{r}
+rfFinalPred <- predict(rfFit, newdata = finalTestingData)
+```
+
+Finally the function as shown in the assignment is used to create the files for submission.
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+Write the files for submission.
+```{r}
+pml_write_files(rfFinalPred)
+```
+
+
+
+
